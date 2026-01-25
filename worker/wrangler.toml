@@ -11,6 +11,11 @@ bindings = [
 tag = "v1"
 new_sqlite_classes = ["SessionDO"]
 
+[observability]
+[observability.logs]
+enabled = false
+invocation_logs = true
+
 [vars]
 ALLOWED_ORIGIN = "https://gabberthomson.github.io"
 GEMINI_MODEL_CHAT = "models/gemini-2.5-flash"
