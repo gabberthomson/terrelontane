@@ -30,8 +30,11 @@
       background-position: center;
     }
 
-    .app-shell { max-width: 980px; margin: 0 auto; padding: 16px; }
-
+	.app-shell{
+	  height: calc(var(--app-height, 100dvh));
+	  min-height: 100vh;
+	}
+	
     .topbar {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -350,5 +353,52 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       inputEl.focus();
     })();
   </script>
+<script>
+  (function setupViewportFixes() {
+    function setAppHeight() {
+      // Fallback: innerHeight è abbastanza ok su desktop e su molti Android
+      let h = window.innerHeight;
+
+      // Se disponibile, VisualViewport è la migliore misura con tastiera aperta
+      if (window.visualViewport) {
+        h = Math.round(window.visualViewport.height);
+      }
+
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+
+    // Sposta il composer sopra la tastiera quando VisualViewport segnala un offset
+    function setKeyboardOffset() {
+      const composer = document.querySelector(".composer");
+      if (!composer) return;
+
+      if (!window.visualViewport) {
+        composer.style.transform = "translateY(0px)";
+        return;
+      }
+
+      // Su mobile, quando la tastiera apre, visualViewport.offsetTop può variare
+      // e la differenza tra innerHeight e vv.height è (di fatto) l’area tastiera
+      const keyboardPx = Math.max(0, Math.round(window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop));
+      composer.style.transform = `translateY(-${keyboardPx}px)`;
+    }
+
+    function onResize() {
+      setAppHeight();
+      setKeyboardOffset();
+    }
+
+    setAppHeight();
+    setKeyboardOffset();
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", onResize);
+      window.visualViewport.addEventListener("scroll", onResize);
+    }
+  })();
+</script>
 </body>
 </html>
