@@ -2,19 +2,36 @@ export class SessionDO {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+
+    // Init schema (idempotente)
+    this.state.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS kv (
+        k TEXT PRIMARY KEY,
+        v TEXT NOT NULL
+      );
+    `);
   }
 
-  async _load() {
-    const data = (await this.state.storage.get("data")) || {
-      summary: "",
-      turns: [], // array di Content per Gemini: { role, parts:[{text}] }
-      turnCount: 0,
-    };
-    return data;
+  _getJSON(key, fallback) {
+    const cur = this.state.storage.sql.exec(
+      "SELECT v FROM kv WHERE k = ?1",
+      key
+    );
+    const row = cur.one();
+    if (!row) return fallback;
+    try { return JSON.parse(row.v); } catch { return fallback; }
   }
 
-  async _save(data) {
-    await this.state.storage.put("data", data);
+  _putJSON(key, value) {
+    const v = JSON.stringify(value);
+    this.state.storage.sql.exec(
+      "INSERT INTO kv (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+      key, v
+    );
+  }
+
+  _del(key) {
+    this.state.storage.sql.exec("DELETE FROM kv WHERE k = ?1", key);
   }
 
   _toInt(v, def) {
@@ -24,7 +41,7 @@ export class SessionDO {
 
   _buildGeminiContents(summary, turns) {
     const contents = [];
-    if (summary && summary.trim().length) {
+    if (summary && summary.trim()) {
       contents.push({
         role: "user",
         parts: [{ text: `Contesto sintetico (summary rolling):\n${summary}` }],
@@ -38,30 +55,21 @@ export class SessionDO {
     const apiKey = this.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("Missing GEMINI_API_KEY secret");
     const storeName = this.env.GEMINI_FILE_SEARCH_STORE_NAME;
-    if (useFileSearch && !storeName) throw new Error("Missing GEMINI_FILE_SEARCH_STORE_NAME secret/var");
+    if (useFileSearch && !storeName) throw new Error("Missing GEMINI_FILE_SEARCH_STORE_NAME");
 
-    const model = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.0-flash";
+    const model = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
     const maxOutputTokens = this._toInt(this.env.MAX_OUTPUT_TOKENS, 700);
 
     const body = {
       systemInstruction: { parts: [{ text: systemInstructionText }] },
       contents,
-      generationConfig: {
-        maxOutputTokens,
-        temperature: 0.2,
-      },
+      generationConfig: { maxOutputTokens, temperature: 0.2 },
     };
 
-    // File Search Tool: usa lo store esistente (nessun ingest su Cloudflare)
-    // Nomenclatura snake_case come da docs/tooling Gemini (file_search_store_names). :contentReference[oaicite:2]{index=2}
     if (useFileSearch) {
-      body.tools = [
-        {
-          file_search: {
-            file_search_store_names: [storeName],
-          },
-        },
-      ];
+      body.tools = [{
+        file_search: { file_search_store_names: [storeName] }
+      }];
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -78,9 +86,7 @@ export class SessionDO {
 
     const json = await res.json();
     const text =
-      json?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ??
-      "";
-
+      json?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ?? "";
     return text.trim();
   }
 
@@ -94,21 +100,13 @@ export class SessionDO {
     const toSummarize = data.turns.slice(0, data.turns.length - keepLast);
     const remaining = data.turns.slice(data.turns.length - keepLast);
 
-    const summaryModel = this.env.GEMINI_MODEL_SUMMARY || this.env.GEMINI_MODEL_CHAT || "models/gemini-2.0-flash";
-
-    const oldModel = this.env.GEMINI_MODEL_CHAT;
+    const summaryModel = this.env.GEMINI_MODEL_SUMMARY || model;
+    const model = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
+    const old = this.env.GEMINI_MODEL_CHAT;
     this.env.GEMINI_MODEL_CHAT = summaryModel;
 
     const summaryPrompt = [
-      {
-        role: "user",
-        parts: [{
-          text:
-            "Produci un riassunto operativo e compatto della conversazione seguente, " +
-            "mantenendo: (1) decisioni e vincoli sulle regole, (2) fatti canonici emersi, " +
-            "(3) richieste aperte. Massimo 15 righe.",
-        }],
-      },
+      { role: "user", parts: [{ text: "Riassumi in modo operativo e fedele. Max 15 righe." }] },
       ...this._buildGeminiContents(data.summary, toSummarize),
     ];
 
@@ -118,11 +116,11 @@ export class SessionDO {
       useFileSearch: false,
     });
 
-    this.env.GEMINI_MODEL_CHAT = oldModel;
+    this.env.GEMINI_MODEL_CHAT = old;
 
     data.summary = newSummary;
     data.turns = remaining;
-    data.turnCount = 0; // reset contatore dopo roll
+    data.turnCount = 0;
     return data;
   }
 
@@ -130,36 +128,29 @@ export class SessionDO {
     const url = new URL(request.url);
 
     if (request.method === "POST" && url.pathname === "/init") {
-      const data = await this._load();
-      await this._save(data);
+      const data = this._getJSON("data", { summary: "", turns: [], turnCount: 0 });
+      this._putJSON("data", data);
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
     }
 
     if (request.method === "POST" && url.pathname === "/reset") {
-      await this.state.storage.delete("data");
+      this._del("data");
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
     }
 
     if (request.method === "POST" && url.pathname === "/chat") {
       const payload = await request.json().catch(() => null);
       const userText = (payload?.message || "").toString().trim();
-      if (!userText) {
-        return new Response(JSON.stringify({ error: "Missing message" }), { status: 400, headers: { "content-type": "application/json" } });
-      }
+      const systemPrompt = (payload?.systemPrompt || "").toString();
 
-      const data = await this._load();
+      if (!userText) return new Response(JSON.stringify({ error: "Missing message" }), { status: 400, headers: { "content-type": "application/json" } });
+      if (!systemPrompt.trim()) return new Response(JSON.stringify({ error: "Missing systemPrompt" }), { status: 400, headers: { "content-type": "application/json" } });
 
-      // Append user turn
+      const data = this._getJSON("data", { summary: "", turns: [], turnCount: 0 });
+
       data.turns.push({ role: "user", parts: [{ text: userText }] });
       data.turnCount += 1;
 
-      // Build system prompt (il tuo prompt di sistema, senza citazioni)
-      const systemPrompt = payload?.systemPrompt || "";
-      if (!systemPrompt) {
-        return new Response(JSON.stringify({ error: "Missing systemPrompt" }), { status: 400, headers: { "content-type": "application/json" } });
-      }
-
-      // Call Gemini with File Search ALWAYS enabled (come da tua regola)
       const contents = this._buildGeminiContents(data.summary, data.turns);
       const assistantText = await this._callGeminiGenerate({
         systemInstructionText: systemPrompt,
@@ -167,13 +158,11 @@ export class SessionDO {
         useFileSearch: true,
       });
 
-      // Append assistant turn
       data.turns.push({ role: "model", parts: [{ text: assistantText }] });
       data.turnCount += 1;
 
-      // Rolling summary
       const rolled = await this._maybeRollSummary(data);
-      await this._save(rolled);
+      this._putJSON("data", rolled);
 
       return new Response(JSON.stringify({ text: assistantText }), { headers: { "content-type": "application/json" } });
     }
