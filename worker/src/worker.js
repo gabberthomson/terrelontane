@@ -52,7 +52,7 @@ export default {
 
     // Reset session
     if (request.method === "POST" && url.pathname === "/api/session/reset") {
-      const payload = await request.json().catch(() => null);
+      const payload = await request.json().catch(() => null); 
       const sid = (payload?.sessionId || "").toString();
       if (!sid) return json({ error: "Missing sessionId" }, { status: 400, cors });
 
