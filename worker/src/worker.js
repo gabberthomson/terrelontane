@@ -34,6 +34,9 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
+	if (request.method === "GET" && url.pathname === "/api/version") {
+	  return json({ version: "GITHUB_V2" }, request, env);
+	}
     // Healthcheck
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json({ ok: true }, { cors });
