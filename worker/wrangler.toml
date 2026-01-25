@@ -8,12 +8,10 @@ bindings = [
 ]
 
 [[migrations]]
-[[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SessionDO"]
 
 [vars]
-# Non-secret (puoi anche spostarli a Environment Variables su Cloudflare)
 ALLOWED_ORIGIN = "https://gabberthomson.github.io"
 GEMINI_MODEL_CHAT = "models/gemini-2.5-flash"
 GEMINI_MODEL_SUMMARY = "models/gemini-2.5-flash"
