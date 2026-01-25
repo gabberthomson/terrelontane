@@ -20,7 +20,7 @@
     body {
       min-height: 100vh;
       background: #0b1220;
-      /* Sfondo provvisorio: lo cambieremo dopo. */
+      /* Sfondo provvisorio: lo cambieremo dopo con un'immagine */
       background-image:
         linear-gradient(var(--bg-overlay), var(--bg-overlay)),
         radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
@@ -30,11 +30,7 @@
       background-position: center;
     }
 
-    .app-shell {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 16px;
-    }
+    .app-shell { max-width: 980px; margin: 0 auto; padding: 16px; }
 
     .topbar {
       background: var(--panel);
@@ -53,25 +49,17 @@
     }
 
     .chat-scroll {
-      height: calc(100vh - 210px);
+      height: calc(100vh - 200px);
       min-height: 420px;
       overflow-y: auto;
       padding: 14px 14px 8px 14px;
     }
 
     @media (max-width: 576px) {
-      .chat-scroll {
-        height: calc(100vh - 240px);
-        min-height: 420px;
-      }
+      .chat-scroll { height: calc(100vh - 230px); min-height: 420px; }
     }
 
-    .msg-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
+    .msg-row { display: flex; gap: 10px; margin-bottom: 12px; }
     .msg-row.ai { justify-content: flex-start; }
     .msg-row.user { justify-content: flex-end; }
 
@@ -81,24 +69,12 @@
       border-radius: 16px;
       padding: 10px 12px;
       line-height: 1.35;
-      white-space: pre-wrap; /* mantiene i \n */
+      white-space: pre-wrap;
       word-break: break-word;
     }
 
-    .bubble.ai {
-      background: var(--bubble-ai);
-    }
-
-    .bubble.user {
-      background: var(--bubble-user);
-      font-style: italic;
-    }
-
-    .meta {
-      opacity: 0.6;
-      font-size: 12px;
-      margin-top: 4px;
-    }
+    .bubble.ai { background: var(--bubble-ai); }
+    .bubble.user { background: var(--bubble-user); font-style: italic; }
 
     .composer {
       padding: 12px;
@@ -106,16 +82,8 @@
       background: rgba(255,255,255,0.96);
     }
 
-    textarea.form-control {
-      resize: none;
-      min-height: 54px;
-      max-height: 160px;
-    }
-
-    .hint {
-      font-size: 12px;
-      opacity: 0.70;
-    }
+    textarea.form-control { resize: none; min-height: 54px; max-height: 160px; }
+    .hint { font-size: 12px; opacity: 0.70; }
 
     .spinner {
       display: inline-block;
@@ -128,7 +96,6 @@
       vertical-align: -3px;
       margin-right: 6px;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -140,22 +107,20 @@
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <strong>Terre Lontane</strong>
         <span class="text-muted">Assistente</span>
-        <a id="manualLink" class="btn btn-sm btn-outline-secondary" href="./risorse_terre_lontane.pdf" target="_blank" rel="noopener">
+        <a id="manualLink" class="btn btn-sm btn-outline-secondary"
+           href="./risorse_terre_lontane.pdf" target="_blank" rel="noopener">
           Scarica risorse del gioco (PDF)
         </a>
       </div>
 
       <div class="d-flex align-items-center gap-2">
-        <button id="btnNew" class="btn btn-sm btn-primary">Nuova chat</button>
-        <button id="btnReset" class="btn btn-sm btn-outline-danger">Reset chat</button>
+        <button id="btnNewChat" class="btn btn-sm btn-primary">Nuova chat</button>
       </div>
     </div>
 
     <!-- Chat -->
     <div class="chat-card">
-      <div id="chat" class="chat-scroll">
-        <!-- Messaggi renderizzati qui -->
-      </div>
+      <div id="chat" class="chat-scroll"></div>
 
       <!-- Composer -->
       <div class="composer">
@@ -179,7 +144,7 @@
     const STORAGE_KEY = "tl_session_id_v1";
 
     // =========================
-    // SYSTEM PROMPT (il tuo)
+    // SYSTEM PROMPT
     // =========================
     const SYSTEM_PROMPT = `Sei l’assistente ufficiale del gioco di ruolo “Terre Lontane”.
 
@@ -227,8 +192,7 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     const inputEl = document.getElementById("input");
     const statusEl = document.getElementById("status");
     const btnSend = document.getElementById("btnSend");
-    const btnNew = document.getElementById("btnNew");
-    const btnReset = document.getElementById("btnReset");
+    const btnNewChat = document.getElementById("btnNewChat");
 
     // =========================
     // STATE
@@ -242,19 +206,16 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     function setBusy(busy, text) {
       isBusy = busy;
       btnSend.disabled = busy;
-      btnNew.disabled = busy;
-      btnReset.disabled = busy;
+      btnNewChat.disabled = busy;
       inputEl.disabled = busy;
-
       statusEl.textContent = text || "";
     }
 
-    function scrollToBottom() {
-      chatEl.scrollTop = chatEl.scrollHeight;
-    }
+    function scrollToBottom() { chatEl.scrollTop = chatEl.scrollHeight; }
 
     function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, (m) => ({
+      const s = (str ?? "").toString();
+      return s.replace(/[&<>"']/g, (m) => ({
         "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;"
       }[m]));
     }
@@ -262,12 +223,9 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     function addMessage(role, text) {
       const row = document.createElement("div");
       row.className = `msg-row ${role}`;
-
       const bubble = document.createElement("div");
       bubble.className = `bubble ${role}`;
-      // rendering semplice: testo in chiaro (niente textbox)
       bubble.innerHTML = escapeHtml(text);
-
       row.appendChild(bubble);
       chatEl.appendChild(row);
       scrollToBottom();
@@ -277,11 +235,9 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       const row = document.createElement("div");
       row.className = "msg-row ai";
       row.id = "thinking-row";
-
       const bubble = document.createElement("div");
       bubble.className = "bubble ai";
       bubble.innerHTML = `<span class="spinner"></span>Sto pensando...`;
-
       row.appendChild(bubble);
       chatEl.appendChild(row);
       scrollToBottom();
@@ -293,7 +249,10 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     }
 
     // =========================
-    // API
+    // API (coerente col tuo worker.js)
+    //  - POST /api/session/new
+    //  - POST /api/session/reset   body: {sessionId}
+    //  - POST /api/chat            body: {sessionId, message, systemPrompt}
     // =========================
     async function api(path, body) {
       const res = await fetch(`${WORKER_BASE_URL}${path}`, {
@@ -301,40 +260,35 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body || {}),
       });
-      const txt = await res.text();
+
+      const raw = await res.text();
       let json = null;
-      try { json = JSON.parse(txt); } catch { /* ignore */ }
+      try { json = JSON.parse(raw); } catch { /* raw può essere HTML */ }
+
       if (!res.ok) {
-        const detail = json?.detail || json?.error || txt || `HTTP ${res.status}`;
+        const detail = (json && (json.detail || json.error)) ? (json.detail || json.error) : (raw || `HTTP ${res.status}`);
         throw new Error(detail);
       }
       return json ?? {};
     }
 
-    async function ensureSession() {
-      if (sessionId) return sessionId;
+    async function createNewSessionId() {
       const out = await api("/api/session/new", {});
       sessionId = out.sessionId;
       localStorage.setItem(STORAGE_KEY, sessionId);
       return sessionId;
     }
 
-    async function newSession() {
-      const out = await api("/api/session/new", {});
-      sessionId = out.sessionId;
-      localStorage.setItem(STORAGE_KEY, sessionId);
-      chatEl.innerHTML = "";
-      addMessage("ai", "Nuova chat avviata. Dimmi pure.");
+    async function ensureSession() {
+      if (sessionId) return sessionId;
+      return await createNewSessionId();
     }
 
-    async function resetSession() {
-      if (!sessionId) {
-        // se non c'è sessione, equivale a nuova
-        return newSession();
-      }
-      await api(`/api/session/${encodeURIComponent(sessionId)}/reset`, {});
+    async function newChat() {
+      // UX: “Nuova chat” = nuovo sessionId + pulizia UI
+      await createNewSessionId();
       chatEl.innerHTML = "";
-      addMessage("ai", "Chat resettata. Dimmi pure.");
+      addMessage("ai", "Nuova chat avviata. Dimmi pure.");
     }
 
     async function sendMessage() {
@@ -348,10 +302,13 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
 
       try {
         const sid = await ensureSession();
-        const out = await api(`/api/session/${encodeURIComponent(sid)}/chat`, {
+
+        const out = await api("/api/chat", {
+          sessionId: sid,
           message: text,
           systemPrompt: SYSTEM_PROMPT,
         });
+
         removeThinking();
         addMessage("ai", out.text || "(risposta vuota)");
       } catch (e) {
@@ -368,43 +325,22 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     // =========================
     btnSend.addEventListener("click", sendMessage);
 
+    btnNewChat.addEventListener("click", async () => {
+      if (isBusy) return;
+      setBusy(true, "Creo nuova chat...");
+      try { await newChat(); }
+      catch (e) { addMessage("ai", `Errore: ${String(e.message || e)}`); }
+      finally { setBusy(false, ""); inputEl.focus(); }
+    });
+
     inputEl.addEventListener("keydown", (ev) => {
-      // Ctrl+Enter: newline
-      if (ev.key === "Enter" && ev.ctrlKey) {
-        // lascia comportamento naturale (a capo)
-        return;
-      }
+      // Ctrl+Enter: newline (default)
+      if (ev.key === "Enter" && ev.ctrlKey) return;
 
       // Enter: send (senza shift, senza ctrl)
       if (ev.key === "Enter" && !ev.ctrlKey && !ev.shiftKey) {
         ev.preventDefault();
         sendMessage();
-      }
-    });
-
-    btnNew.addEventListener("click", async () => {
-      if (isBusy) return;
-      setBusy(true, "Creo nuova chat...");
-      try {
-        await newSession();
-      } catch (e) {
-        addMessage("ai", `Errore: ${String(e.message || e)}`);
-      } finally {
-        setBusy(false, "");
-        inputEl.focus();
-      }
-    });
-
-    btnReset.addEventListener("click", async () => {
-      if (isBusy) return;
-      setBusy(true, "Reset in corso...");
-      try {
-        await resetSession();
-      } catch (e) {
-        addMessage("ai", `Errore: ${String(e.message || e)}`);
-      } finally {
-        setBusy(false, "");
-        inputEl.focus();
       }
     });
 
