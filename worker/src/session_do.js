@@ -3,24 +3,31 @@ export class SessionDO {
     this.state = state;
     this.env = env;
 
-    // Init schema (idempotente)
-    this.state.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS kv (
-        k TEXT PRIMARY KEY,
-        v TEXT NOT NULL
-      );
-    `);
+    this.state.blockConcurrencyWhile(async () => {
+      this.state.storage.sql.exec("
+        CREATE TABLE IF NOT EXISTS kv (
+          k TEXT PRIMARY KEY,
+          v TEXT NOT NULL
+        );
+      ");
+    });
   }
+
 
   _getJSON(key, fallback) {
     const cur = this.state.storage.sql.exec(
       "SELECT v FROM kv WHERE k = ?1",
       key
     );
-    const row = cur.one();
-    if (!row) return fallback;
-    try { return JSON.parse(row.v); } catch { return fallback; }
+    const rows = cur.toArray();
+    if (rows.length === 0) return fallback;
+
+    const v = rows[0]?.v;
+    if (typeof v !== "string") return fallback;
+
+    try { return JSON.parse(v); } catch { return fallback; }
   }
+
 
   _putJSON(key, value) {
     const v = JSON.stringify(value);
@@ -51,13 +58,13 @@ export class SessionDO {
     return contents;
   }
 
-  async _callGeminiGenerate({ systemInstructionText, contents, useFileSearch }) {
+  async _callGeminiGenerate({ systemInstructionText, contents, useFileSearch, modelOverride }) {
     const apiKey = this.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("Missing GEMINI_API_KEY secret");
     const storeName = this.env.GEMINI_FILE_SEARCH_STORE_NAME;
     if (useFileSearch && !storeName) throw new Error("Missing GEMINI_FILE_SEARCH_STORE_NAME");
 
-    const model = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
+    const model = modelOverride || this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
     const maxOutputTokens = this._toInt(this.env.MAX_OUTPUT_TOKENS, 700);
 
     const body = {
@@ -67,12 +74,12 @@ export class SessionDO {
     };
 
     if (useFileSearch) {
-      body.tools = [{
-        file_search: { file_search_store_names: [storeName] }
-      }];
+      body.tools = [{ file_search: { file_search_store_names: [storeName] } }];
     }
 
+
     const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+	
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -100,10 +107,8 @@ export class SessionDO {
     const toSummarize = data.turns.slice(0, data.turns.length - keepLast);
     const remaining = data.turns.slice(data.turns.length - keepLast);
 
-    const summaryModel = this.env.GEMINI_MODEL_SUMMARY || model;
-    const model = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
-    const old = this.env.GEMINI_MODEL_CHAT;
-    this.env.GEMINI_MODEL_CHAT = summaryModel;
+    const chatModel = this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
+    const summaryModel = this.env.GEMINI_MODEL_SUMMARY || chatModel;
 
     const summaryPrompt = [
       { role: "user", parts: [{ text: "Riassumi in modo operativo e fedele. Max 15 righe." }] },
@@ -114,15 +119,15 @@ export class SessionDO {
       systemInstructionText: "Sei un assistente che sintetizza conversazioni in modo fedele e conciso.",
       contents: summaryPrompt,
       useFileSearch: false,
+      modelOverride: summaryModel,
     });
-
-    this.env.GEMINI_MODEL_CHAT = old;
 
     data.summary = newSummary;
     data.turns = remaining;
     data.turnCount = 0;
     return data;
   }
+
 
   async fetch(request) {
     const url = new URL(request.url);
