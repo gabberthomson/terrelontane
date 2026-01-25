@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Terre Lontane Assistant</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; max-width: 900px; }
+    #log { border: 1px solid #ddd; padding: 12px; height: 55vh; overflow: auto; white-space: pre-wrap; }
+    .row { margin-top: 12px; display: flex; gap: 8px; }
+    textarea { width: 100%; height: 90px; }
+    button { padding: 8px 12px; }
+    .meta { color: #666; font-size: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Terre Lontane Assistant</h1>
+
+  <div class="meta">
+    Session: <span id="sid">(none)</span>
+    <button id="btnNew">Nuova sessione</button>
+    <button id="btnReset">Reset sessione</button>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="row">
+    <textarea id="msg" placeholder="Scrivi qui..."></textarea>
+  </div>
+  <div class="row">
+    <button id="btnSend">Invia</button>
+  </div>
+
+<script>
+  const WORKER_BASE_URL = "https://terrelontane.gabberthomson.workers.dev";
+
+  const SYSTEM_PROMPT = `Sei l’assistente ufficiale del gioco di ruolo “Terre Lontane”.
+
+Per OGNI domanda dell’utente devi seguire questo processo:
+
+Determina la modalità della domanda:
+
+REGOLA → chiarimenti su regole, meccaniche, abilità, oggetti, combattimento, magie, tiri, mostri già esistenti.
+
+IDEE → spunti creativi: avventure, ambientazioni, PNG, nuovi mostri, oggetti inventati.
+
+MISTA → una parte di regole + una parte creativa.
+
+Usa SEMPRE il tool file_search sul manuale di “Terre Lontane” prima di rispondere.
+
+MODALITÀ REGOLA:
+
+Rispondi SOLO usando informazioni presenti negli estratti recuperati con file_search.
+
+NON inventare regole, numeri, eccezioni o interpretazioni.
+
+Se non trovi la risposta negli estratti, dì:
+“Questa informazione non è presente nel manuale di Terre Lontane”.
+
+NON proporre house rule.
+
+MODALITÀ IDEE:
+
+Usa gli estratti come canone (tono, ambientazione, meccaniche).
+
+Poi proponi idee pratiche e subito giocabili.
+
+Se fai assunzioni non presenti, dichiaralo.
+
+MODALITÀ MISTA:
+
+Dividi in “Regole” (solo manuale) e “Idee” (creative ma coerenti).
+
+Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
+
+  const elLog = document.getElementById("log");
+  const elMsg = document.getElementById("msg");
+  const elSid = document.getElementById("sid");
+
+  function log(line) {
+    elLog.textContent += line + "\n";
+    elLog.scrollTop = elLog.scrollHeight;
+  }
+
+  function setSid(sid) {
+    localStorage.setItem("tl_sid", sid || "");
+    elSid.textContent = sid || "(none)";
+  }
+
+  async function newSession() {
+    const r = await fetch(WORKER_BASE_URL + "/api/session/new", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    setSid(j.sessionId);
+    elLog.textContent = "";
+    log("Sessione creata.");
+  }
+
+  async function resetSession() {
+    const sid = localStorage.getItem("tl_sid") || "";
+    if (!sid) return;
+    const r = await fetch(WORKER_BASE_URL + "/api/session/reset", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: sid }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    elLog.textContent = "";
+    log("Sessione resettata.");
+  }
+
+  async function send() {
+    const sid = localStorage.getItem("tl_sid") || "";
+    if (!sid) { await newSession(); }
+    const message = elMsg.value.trim();
+    if (!message) return;
+
+    log("UTENTE: " + message);
+    elMsg.value = "";
+
+    const r = await fetch(WORKER_BASE_URL + "/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: localStorage.getItem("tl_sid"),
+        message,
+        systemPrompt: SYSTEM_PROMPT,
+      }),
+    });
+
+    const j = await r.json();
+    if (!r.ok) {
+      log("ERRORE: " + JSON.stringify(j));
+      return;
+    }
+    log("ASSISTENTE: " + (j.text || ""));
+  }
+
+  document.getElementById("btnNew").onclick = () => newSession().catch(e => log("ERRORE: " + e.message));
+  document.getElementById("btnReset").onclick = () => resetSession().catch(e => log("ERRORE: " + e.message));
+  document.getElementById("btnSend").onclick = () => send().catch(e => log("ERRORE: " + e.message));
+
+  // init UI
+  setSid(localStorage.getItem("tl_sid") || "");
+</script>
+</body>
+</html>
