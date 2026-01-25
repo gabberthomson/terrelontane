@@ -4,14 +4,15 @@ export class SessionDO {
     this.env = env;
 
     this.state.blockConcurrencyWhile(async () => {
-      this.state.storage.sql.exec("
+      this.state.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS kv (
           k TEXT PRIMARY KEY,
           v TEXT NOT NULL
         );
-      ");
+      `);
     });
   }
+
 
 
   _getJSON(key, fallback) {
