@@ -66,12 +66,11 @@ export class SessionDO {
     if (useFileSearch && !storeName) throw new Error("Missing GEMINI_FILE_SEARCH_STORE_NAME");
 
     const model = modelOverride || this.env.GEMINI_MODEL_CHAT || "models/gemini-2.5-flash";
-    const maxOutputTokens = this._toInt(this.env.MAX_OUTPUT_TOKENS, 700);
 
     const body = {
       systemInstruction: { parts: [{ text: systemInstructionText }] },
       contents,
-      generationConfig: { maxOutputTokens, temperature: 0.2 },
+      generationConfig: { temperature: 0.2 },
     };
 
     if (useFileSearch) {
