@@ -8,6 +8,10 @@
   <!-- Bootstrap (solo CSS) -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
+  <!-- Markdown renderer + HTML sanitizer (per output Gemini in markdown) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
   <style>
     :root {
       --bg-overlay: rgba(0, 0, 0, 0.35);
@@ -17,63 +21,59 @@
       --border: rgba(0,0,0,0.10);
     }
 
-html, body {
-  height: 100%;
-  width: 100%;
-}
+    html, body {
+      height: 100%;
+      width: 100%;
+    }
 
-body {
-  margin: 0;
+    body {
+      margin: 0;
 
-  /* Background full-page (come già fai) */
-  background: #0b1220;
-  background-image:
-    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
-    radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
-    radial-gradient(circle at 80% 30%, rgba(255,255,255,0.08), transparent 40%),
-    radial-gradient(circle at 40% 90%, rgba(255,255,255,0.06), transparent 45%);
-  background-size: cover;
-  background-position: center;
+      /* Background full-page */
+      background: #0b1220;
+      background-image:
+        linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+        radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
+        radial-gradient(circle at 80% 30%, rgba(255,255,255,0.08), transparent 40%),
+        radial-gradient(circle at 40% 90%, rgba(255,255,255,0.06), transparent 45%);
+      background-size: cover;
+      background-position: center;
 
-  /* Evita “rimbalzo” senza bloccare la gestione della viewport */
-  overflow: clip;
-  overscroll-behavior: none;
+      /* Evita rimbalzi e side effects con tastiera */
+      overflow: clip;
+      overscroll-behavior: none;
 
-  /* Fallback viewport: svh/dvh dove possibile */
-  min-height: 100vh;
-  min-height: 100svh;
-}
+      min-height: 100vh;
+      min-height: 100svh;
+    }
 
-@supports (height: 100dvh) {
-  body { min-height: 100dvh; }
-}
+    @supports (height: 100dvh) {
+      body { min-height: 100dvh; }
+    }
 
-.app-shell {
-  /* Altezza app: usa JS fallback quando serve, altrimenti svh/dvh */
-  height: var(--app-height, 100vh);
-  min-height: 100vh;
-  min-height: 100svh;
+    .app-shell {
+      height: var(--app-height, 100vh);
+      min-height: 100vh;
+      min-height: 100svh;
 
-  /* Desktop containment */
-  width: 100%;
-  max-width: 980px;
-  margin: 0 auto;
+      width: 100%;
+      max-width: 980px;
+      margin: 0 auto;
 
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
 
-  /* Spaziatura + safe-area */
-  padding: 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-}
+      padding: 12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
 
-@supports (height: 100dvh) {
-  .app-shell {
-    height: var(--app-height, 100dvh);
-    min-height: 100dvh;
-  }
-}
+    @supports (height: 100dvh) {
+      .app-shell {
+        height: var(--app-height, 100dvh);
+        min-height: 100dvh;
+      }
+    }
 
     .topbar {
       background: var(--panel);
@@ -92,24 +92,22 @@ body {
       overflow: hidden;
       flex: 1 1 auto;
 
-      /* importante per avere chat + composer senza tagli */
       display: flex;
       flex-direction: column;
-      min-height: 0; /* fondamentale per overflow corretto nei flex */
+      min-height: 0;
     }
 
-.chat-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 14px 10px 14px;
-  -webkit-overflow-scrolling: touch;
+    .chat-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 14px 14px 10px 14px;
+      -webkit-overflow-scrolling: touch;
 
-  /* IMPORTANTISSIMO: spazio di scroll per non coprire l’ultima bolla */
-  padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
-  scroll-padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
-}
-
+      /* spazio per non coprire l’ultima bolla */
+      padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
+      scroll-padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
+    }
 
     .msg-row {
       display: flex;
@@ -126,27 +124,83 @@ body {
       border-radius: 16px;
       padding: 10px 12px;
       line-height: 1.35;
-      white-space: pre-wrap;
       word-break: break-word;
     }
 
+    /* NB: togliamo white-space: pre-wrap qui: il markdown gestisce meglio spaziature/paragraph.
+       Manteniamo word-break e gestiamo newline via marked (breaks=true). */
     .bubble.ai { background: var(--bubble-ai); }
-    .bubble.user { background: var(--bubble-user); font-style: italic; }
+    .bubble.user { background: var(--bubble-user); font-style: italic; white-space: pre-wrap; }
+
+    /* Contenuto markdown dentro le bolle AI */
+    .bubble .md {
+      line-height: 1.45;
+      word-wrap: break-word;
+    }
+    .bubble .md p { margin: 0.4em 0; }
+    .bubble .md ul, .bubble .md ol { margin: 0.4em 0 0.4em 1.25em; }
+    .bubble .md li { margin: 0.2em 0; }
+    .bubble .md h1, .bubble .md h2, .bubble .md h3 {
+      margin: 0.6em 0 0.3em;
+      line-height: 1.2;
+    }
+
+    .bubble .md code {
+      padding: 0.12em 0.35em;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.06);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.95em;
+    }
+    .bubble .md pre {
+      margin: 0.6em 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.12);
+      overflow: auto;
+    }
+    .bubble .md pre code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.92em;
+      display: block;
+      white-space: pre;
+    }
+
+    .bubble .md table {
+      border-collapse: collapse;
+      margin: 0.6em 0;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 10px;
+    }
+    .bubble .md th, .bubble .md td {
+      border: 1px solid rgba(0,0,0,0.12);
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    .bubble .md th {
+      background: rgba(0,0,0,0.04);
+    }
+
+    .bubble .md a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
 
     .composer {
       flex: 0 0 auto;
       border-top: 1px solid var(--border);
       background: rgba(255,255,255,0.96);
 
-      /* “sticky” dentro la card: resta visibile senza coprire contenuto */
       position: sticky;
       bottom: 0;
+      z-index: 5;
+
       padding: 10px 12px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom));
-  position: sticky;
-  bottom: 0;
-  z-index: 5; /* sopra le bolle */
-  }
+    }
 
     textarea.form-control {
       resize: none;
@@ -173,7 +227,6 @@ body {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Piccolo tuning per mobile */
     @media (max-width: 576px) {
       .app-shell { padding: 10px; gap: 10px; }
       .topbar { border-radius: 14px; }
@@ -191,7 +244,6 @@ body {
         <strong>Terre Lontane</strong>
         <span class="text-muted">Assistente</span>
 
-        <!-- Link statico (attenzione: se il PDF è privato, non può stare su GitHub Pages senza protezione) -->
         <a id="manualLink" class="btn btn-sm btn-outline-secondary"
            href="./risorse_terre_lontane.pdf" target="_blank" rel="noopener">
           Scarica risorse (PDF)
@@ -286,6 +338,28 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     let isBusy = false;
 
     // =========================
+    // Markdown renderer (safe)
+    // =========================
+    function renderMarkdown(md) {
+      if (!window.marked || !window.DOMPurify) {
+        // Fallback: se CDN non carica, mostra plain text sicuro
+        const div = document.createElement("div");
+        div.textContent = md ?? "";
+        return div.innerHTML;
+      }
+
+      // Config: newline => <br>, GFM
+      marked.setOptions({ breaks: true, gfm: true });
+
+      const rawHtml = marked.parse(md ?? "");
+
+      // Sanitize: consenti HTML “normale” e blocca script/event handlers
+      return DOMPurify.sanitize(rawHtml, {
+        USE_PROFILES: { html: true }
+      });
+    }
+
+    // =========================
     // UI helpers
     // =========================
     function setBusy(busy, text) {
@@ -297,14 +371,7 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     }
 
     function scrollToBottom() {
-      // requestAnimationFrame riduce glitch su mobile
       requestAnimationFrame(() => { chatEl.scrollTop = chatEl.scrollHeight; });
-    }
-
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, (m) => ({
-        "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;"
-      }[m]));
     }
 
     function addMessage(role, text) {
@@ -313,7 +380,17 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
 
       const bubble = document.createElement("div");
       bubble.className = `bubble ${role}`;
-      bubble.innerHTML = escapeHtml(text);
+
+      if (role === "ai") {
+        // Markdown renderizzato e sanitizzato
+        const content = document.createElement("div");
+        content.className = "md";
+        content.innerHTML = renderMarkdown(text);
+        bubble.appendChild(content);
+      } else {
+        // Utente: plain text (evita qualunque HTML injection)
+        bubble.textContent = text ?? "";
+      }
 
       row.appendChild(bubble);
       chatEl.appendChild(row);
@@ -382,11 +459,12 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     }
 
     async function sendMessage() {
-      const text = (inputEl.value || "").trim();
+      const raw = inputEl.value || "";
+      const text = raw.trim();
       if (!text || isBusy) return;
 
       setBusy(true, "");
-      addMessage("user", text);
+      addMessage("user", raw.trimEnd()); // preserva eventuali newline finali se presenti
       inputEl.value = "";
       addThinking();
 
@@ -425,9 +503,6 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       }
     });
 
-    // Un solo bottone:
-    // - se c'è sessione: reset
-    // - se non c'è: new
     btnNew.addEventListener("click", async () => {
       if (isBusy) return;
       setBusy(true, "Avvio chat...");
@@ -449,48 +524,41 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     (function boot() {
       addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
       inputEl.focus();
-      // opzionale: se vuoi partire sempre da sessione pulita sul device:
-      // sessionId = "";
-      // localStorage.removeItem(STORAGE_KEY);
     })();
 
-(function setupViewportFixes() {
-  const composer = document.querySelector(".composer");
-  const chat = document.getElementById("chat");
+    // Viewport / keyboard-safe sizing
+    (function setupViewportFixes() {
+      const composer = document.querySelector(".composer");
+      const chat = document.getElementById("chat");
 
-  function setVars() {
-    // 1) Altezza “visibile” reale (con tastiera): VisualViewport quando disponibile
-    let h = window.innerHeight;
-    if (window.visualViewport) h = Math.round(window.visualViewport.height);
-    document.documentElement.style.setProperty("--app-height", h + "px");
+      function setVars() {
+        let h = window.innerHeight;
+        if (window.visualViewport) h = Math.round(window.visualViewport.height);
+        document.documentElement.style.setProperty("--app-height", h + "px");
 
-    // 2) Misura altezza composer per padding-bottom del container chat
-    if (composer) {
-      const ch = Math.round(composer.getBoundingClientRect().height);
-      document.documentElement.style.setProperty("--composer-h", ch + "px");
-    }
-  }
+        if (composer) {
+          const ch = Math.round(composer.getBoundingClientRect().height);
+          document.documentElement.style.setProperty("--composer-h", ch + "px");
+        }
+      }
 
-  function onResizeOrFocus() {
-    setVars();
-    // Se sto scrivendo, voglio che la chat resti “a fondo”
-    if (chat) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
-  }
+      function onResizeOrFocus() {
+        setVars();
+        if (chat) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+      }
 
-  setVars();
+      setVars();
 
-  window.addEventListener("resize", onResizeOrFocus);
-  window.addEventListener("orientationchange", onResizeOrFocus);
+      window.addEventListener("resize", onResizeOrFocus);
+      window.addEventListener("orientationchange", onResizeOrFocus);
+      window.addEventListener("focusin", onResizeOrFocus);
+      window.addEventListener("focusout", onResizeOrFocus);
 
-  // Eventi più affidabili su mobile quando entra/esce la tastiera
-  window.addEventListener("focusin", onResizeOrFocus);
-  window.addEventListener("focusout", onResizeOrFocus);
-
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", onResizeOrFocus);
-    window.visualViewport.addEventListener("scroll", onResizeOrFocus);
-  }
-})();
-</script>
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", onResizeOrFocus);
+        window.visualViewport.addEventListener("scroll", onResizeOrFocus);
+      }
+    })();
+  </script>
 </body>
 </html>
