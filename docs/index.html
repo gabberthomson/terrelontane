@@ -489,7 +489,7 @@ async function sendMessage() {
   addThinking();
 
   try {
- //   const sid = await ensureSession();
+    const sid = await ensureSession();
  //   const tsToken = await getTurnstileToken();
 
     const out = await postJson("/api/chat", {
