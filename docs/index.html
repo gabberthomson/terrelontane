@@ -17,33 +17,63 @@
       --border: rgba(0,0,0,0.10);
     }
 
-    html, body { height: 100%; }
+html, body {
+  height: 100%;
+  width: 100%;
+}
 
-    body {
-      margin: 0;
-      background: #0b1220;
-      background-image:
-        linear-gradient(var(--bg-overlay), var(--bg-overlay)),
-        radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
-        radial-gradient(circle at 80% 30%, rgba(255,255,255,0.08), transparent 40%),
-        radial-gradient(circle at 40% 90%, rgba(255,255,255,0.06), transparent 45%);
-      background-size: cover;
-      background-position: center;
-      overflow: hidden; /* evita rimbalzi e doppi scroll su mobile */
-    }
+body {
+  margin: 0;
 
-    /* Shell a piena altezza (dvh = migliore su mobile) */
-    .app-shell {
-      height: calc(var(--app-height, 100dvh));
-      min-height: 100vh;
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding-bottom: calc(12px + env(safe-area-inset-bottom));
-    }
+  /* Background full-page (come già fai) */
+  background: #0b1220;
+  background-image:
+    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+    radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
+    radial-gradient(circle at 80% 30%, rgba(255,255,255,0.08), transparent 40%),
+    radial-gradient(circle at 40% 90%, rgba(255,255,255,0.06), transparent 45%);
+  background-size: cover;
+  background-position: center;
+
+  /* Evita “rimbalzo” senza bloccare la gestione della viewport */
+  overflow: clip;
+  overscroll-behavior: none;
+
+  /* Fallback viewport: svh/dvh dove possibile */
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
+}
+
+.app-shell {
+  /* Altezza app: usa JS fallback quando serve, altrimenti svh/dvh */
+  height: var(--app-height, 100vh);
+  min-height: 100vh;
+  min-height: 100svh;
+
+  /* Desktop containment */
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  /* Spaziatura + safe-area */
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+@supports (height: 100dvh) {
+  .app-shell {
+    height: var(--app-height, 100dvh);
+    min-height: 100dvh;
+  }
+}
 
     .topbar {
       background: var(--panel);
@@ -68,13 +98,18 @@
       min-height: 0; /* fondamentale per overflow corretto nei flex */
     }
 
-    .chat-scroll {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y: auto;
-      padding: 14px 14px 10px 14px;
-      -webkit-overflow-scrolling: touch;
-    }
+.chat-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 14px 10px 14px;
+  -webkit-overflow-scrolling: touch;
+
+  /* IMPORTANTISSIMO: spazio di scroll per non coprire l’ultima bolla */
+  padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(14px + var(--composer-h, 92px) + env(safe-area-inset-bottom));
+}
+
 
     .msg-row {
       display: flex;
@@ -108,7 +143,10 @@
       bottom: 0;
       padding: 10px 12px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    }
+  position: sticky;
+  bottom: 0;
+  z-index: 5; /* sopra le bolle */
+  }
 
     textarea.form-control {
       resize: none;
@@ -415,53 +453,44 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       // sessionId = "";
       // localStorage.removeItem(STORAGE_KEY);
     })();
-  </script>
-<script>
-  (function setupViewportFixes() {
-    function setAppHeight() {
-      // Fallback: innerHeight è abbastanza ok su desktop e su molti Android
-      let h = window.innerHeight;
 
-      // Se disponibile, VisualViewport è la migliore misura con tastiera aperta
-      if (window.visualViewport) {
-        h = Math.round(window.visualViewport.height);
-      }
+(function setupViewportFixes() {
+  const composer = document.querySelector(".composer");
+  const chat = document.getElementById("chat");
 
-      document.documentElement.style.setProperty("--app-height", h + "px");
+  function setVars() {
+    // 1) Altezza “visibile” reale (con tastiera): VisualViewport quando disponibile
+    let h = window.innerHeight;
+    if (window.visualViewport) h = Math.round(window.visualViewport.height);
+    document.documentElement.style.setProperty("--app-height", h + "px");
+
+    // 2) Misura altezza composer per padding-bottom del container chat
+    if (composer) {
+      const ch = Math.round(composer.getBoundingClientRect().height);
+      document.documentElement.style.setProperty("--composer-h", ch + "px");
     }
+  }
 
-    // Sposta il composer sopra la tastiera quando VisualViewport segnala un offset
-    function setKeyboardOffset() {
-      const composer = document.querySelector(".composer");
-      if (!composer) return;
+  function onResizeOrFocus() {
+    setVars();
+    // Se sto scrivendo, voglio che la chat resti “a fondo”
+    if (chat) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+  }
 
-      if (!window.visualViewport) {
-        composer.style.transform = "translateY(0px)";
-        return;
-      }
+  setVars();
 
-      // Su mobile, quando la tastiera apre, visualViewport.offsetTop può variare
-      // e la differenza tra innerHeight e vv.height è (di fatto) l’area tastiera
-      const keyboardPx = Math.max(0, Math.round(window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop));
-      composer.style.transform = `translateY(-${keyboardPx}px)`;
-    }
+  window.addEventListener("resize", onResizeOrFocus);
+  window.addEventListener("orientationchange", onResizeOrFocus);
 
-    function onResize() {
-      setAppHeight();
-      setKeyboardOffset();
-    }
+  // Eventi più affidabili su mobile quando entra/esce la tastiera
+  window.addEventListener("focusin", onResizeOrFocus);
+  window.addEventListener("focusout", onResizeOrFocus);
 
-    setAppHeight();
-    setKeyboardOffset();
-
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", onResize);
-      window.visualViewport.addEventListener("scroll", onResize);
-    }
-  })();
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onResizeOrFocus);
+    window.visualViewport.addEventListener("scroll", onResizeOrFocus);
+  }
+})();
 </script>
 </body>
 </html>
