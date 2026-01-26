@@ -374,28 +374,45 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       requestAnimationFrame(() => { chatEl.scrollTop = chatEl.scrollHeight; });
     }
 
-    function addMessage(role, text) {
-      const row = document.createElement("div");
-      row.className = `msg-row ${role}`;
+function scrollMessageToTop(rowEl, behavior = "smooth") {
+  if (!rowEl) return;
 
-      const bubble = document.createElement("div");
-      bubble.className = `bubble ${role}`;
+  // calcola la posizione della riga rispetto al container scrollabile
+  const chatRect = chatEl.getBoundingClientRect();
+  const rowRect = rowEl.getBoundingClientRect();
+  const y = (rowRect.top - chatRect.top) + chatEl.scrollTop;
 
-      if (role === "ai") {
-        // Markdown renderizzato e sanitizzato
-        const content = document.createElement("div");
-        content.className = "md";
-        content.innerHTML = renderMarkdown(text);
-        bubble.appendChild(content);
-      } else {
-        // Utente: plain text (evita qualunque HTML injection)
-        bubble.textContent = text ?? "";
-      }
+  // piccolo margine per non attaccare il bubble al bordo
+  const margin = 8;
 
-      row.appendChild(bubble);
-      chatEl.appendChild(row);
-      scrollToBottom();
-    }
+  chatEl.scrollTo({
+    top: Math.max(0, y - margin),
+    behavior
+  });
+}
+
+function addMessage(role, text) {
+  const row = document.createElement("div");
+  row.className = `msg-row ${role}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${role}`;
+
+  if (role === "ai") {
+    const content = document.createElement("div");
+    content.className = "md";
+    content.innerHTML = renderMarkdown(text);
+    bubble.appendChild(content);
+  } else {
+    bubble.textContent = text ?? "";
+  }
+
+  row.appendChild(bubble);
+  chatEl.appendChild(row);
+
+  scrollToBottom();
+  return row; // <--- IMPORTANT
+}
 
     function addThinking() {
       const row = document.createElement("div");
@@ -458,38 +475,48 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       return sessionId;
     }
 
-    async function sendMessage() {
-      const raw = inputEl.value || "";
-      const text = raw.trim();
-      if (!text || isBusy) return;
+async function sendMessage() {
+  const raw = inputEl.value || "";
+  const text = raw.trim();
+  if (!text || isBusy) return;
 
-      setBusy(true, "");
-      addMessage("user", raw.trimEnd()); // preserva eventuali newline finali se presenti
-      inputEl.value = "";
-      addThinking();
+  setBusy(true, "");
 
-      try {
-        const sid = await ensureSession();
-        const out = await postJson("/api/chat", {
-          sessionId: sid,
-          message: text,
-          systemPrompt: SYSTEM_PROMPT,
-        });
+  const userRow = addMessage("user", raw.trimEnd()); // <--- salva riferimento
+  inputEl.value = "";
+  inputEl.blur?.(); // se vuoi chiudere la tastiera
 
-        removeThinking();
-        addMessage("ai", out.text || "(risposta vuota)");
-      } catch (e) {
-        removeThinking();
-        addMessage("ai", `Errore: ${String(e.message || e)}`);
-		} finally {
-		  setBusy(false, "");
+  addThinking();
 
-		  // Desktop: rifocalizza per scrivere subito
-		  // Mobile: NON rifocalizzare, così la tastiera resta chiusa
-		  const isMobileLike = matchMedia("(pointer: coarse)").matches;
-		  if (!isMobileLike) inputEl.focus();
-		}
-    }
+  try {
+    const sid = await ensureSession();
+    const tsToken = await getTurnstileToken();
+
+    const out = await postJson("/api/chat", {
+      sessionId: sid,
+      message: text,
+      systemPrompt: SYSTEM_PROMPT,
+      turnstileToken: tsToken,
+    });
+
+    removeThinking();
+    addMessage("ai", out.text || "(risposta vuota)");
+
+    // <--- QUI: porta la domanda in alto
+    // leggero delay per far “stabilizzare” layout/markdown
+    requestAnimationFrame(() => scrollMessageToTop(userRow, "smooth"));
+
+  } catch (e) {
+    removeThinking();
+    addMessage("ai", `Errore: ${String(e.message || e)}`);
+    requestAnimationFrame(() => scrollMessageToTop(userRow, "smooth"));
+  } finally {
+    setBusy(false, "");
+    const isMobileLike = matchMedia("(pointer: coarse)").matches;
+    if (!isMobileLike) inputEl.focus();
+  }
+}
+
 
     // =========================
     // Events
@@ -548,7 +575,12 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
 
       function onResizeOrFocus() {
         setVars();
-        if (chat) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+if (chat) {
+  const nearBottom = (chat.scrollHeight - (chat.scrollTop + chat.clientHeight)) < 80;
+  if (nearBottom) {
+    requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+  }
+}
       }
 
       setVars();
