@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Terre Lontane - Assistente</title>
 
   <!-- Bootstrap (solo CSS) -->
@@ -17,10 +17,11 @@
       --border: rgba(0,0,0,0.10);
     }
 
+    html, body { height: 100%; }
+
     body {
-      min-height: 100vh;
+      margin: 0;
       background: #0b1220;
-      /* Sfondo provvisorio: lo cambieremo dopo con un'immagine */
       background-image:
         linear-gradient(var(--bg-overlay), var(--bg-overlay)),
         radial-gradient(circle at 20% 10%, rgba(255,255,255,0.10), transparent 35%),
@@ -28,19 +29,29 @@
         radial-gradient(circle at 40% 90%, rgba(255,255,255,0.06), transparent 45%);
       background-size: cover;
       background-position: center;
+      overflow: hidden; /* evita rimbalzi e doppi scroll su mobile */
     }
 
-	.app-shell{
-	  height: calc(var(--app-height, 100dvh));
-	  min-height: 100vh;
-	}
-	
+    /* Shell a piena altezza (dvh = migliore su mobile) */
+    .app-shell {
+      height: calc(var(--app-height, 100dvh));
+      min-height: 100vh;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+
     .topbar {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 10px 12px;
       backdrop-filter: blur(6px);
+      flex: 0 0 auto;
     }
 
     .chat-card {
@@ -49,21 +60,28 @@
       border-radius: 16px;
       backdrop-filter: blur(6px);
       overflow: hidden;
+      flex: 1 1 auto;
+
+      /* importante per avere chat + composer senza tagli */
+      display: flex;
+      flex-direction: column;
+      min-height: 0; /* fondamentale per overflow corretto nei flex */
     }
 
-	/* IMPORTANTISSIMO in layout flex: permette allo scroll di NON “spingere” fuori la composer */
-	.chat-scroll{
-	  flex: 1 1 auto;
-	  min-height: 0;
-	  overflow: auto;
-	  -webkit-overflow-scrolling: touch;
-	}
-
-    @media (max-width: 576px) {
-      .chat-scroll { height: calc(100vh - 230px); min-height: 420px; }
+    .chat-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 14px 14px 10px 14px;
+      -webkit-overflow-scrolling: touch;
     }
 
-    .msg-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .msg-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
     .msg-row.ai { justify-content: flex-start; }
     .msg-row.user { justify-content: flex-end; }
 
@@ -81,13 +99,27 @@
     .bubble.user { background: var(--bubble-user); font-style: italic; }
 
     .composer {
-      padding: 12px;
+      flex: 0 0 auto;
       border-top: 1px solid var(--border);
       background: rgba(255,255,255,0.96);
+
+      /* “sticky” dentro la card: resta visibile senza coprire contenuto */
+      position: sticky;
+      bottom: 0;
+      padding: 10px 12px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom));
     }
 
-    textarea.form-control { resize: none; min-height: 54px; max-height: 160px; }
-    .hint { font-size: 12px; opacity: 0.70; }
+    textarea.form-control {
+      resize: none;
+      min-height: 52px;
+      max-height: 160px;
+    }
+
+    .hint {
+      font-size: 12px;
+      opacity: 0.72;
+    }
 
     .spinner {
       display: inline-block;
@@ -100,25 +132,36 @@
       vertical-align: -3px;
       margin-right: 6px;
     }
+
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Piccolo tuning per mobile */
+    @media (max-width: 576px) {
+      .app-shell { padding: 10px; gap: 10px; }
+      .topbar { border-radius: 14px; }
+      .chat-card { border-radius: 14px; }
+      .bubble { max-width: 94%; }
+    }
   </style>
 </head>
 
 <body>
   <div class="app-shell">
     <!-- Top bar -->
-    <div class="topbar d-flex align-items-center justify-content-between gap-2 mb-3">
+    <div class="topbar d-flex align-items-center justify-content-between gap-2">
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <strong>Terre Lontane</strong>
         <span class="text-muted">Assistente</span>
+
+        <!-- Link statico (attenzione: se il PDF è privato, non può stare su GitHub Pages senza protezione) -->
         <a id="manualLink" class="btn btn-sm btn-outline-secondary"
            href="./risorse_terre_lontane.pdf" target="_blank" rel="noopener">
-          Scarica risorse del gioco (PDF)
+          Scarica risorse (PDF)
         </a>
       </div>
 
       <div class="d-flex align-items-center gap-2">
-        <button id="btnNewChat" class="btn btn-sm btn-primary">Nuova chat</button>
+        <button id="btnNew" class="btn btn-sm btn-primary">Nuova chat</button>
       </div>
     </div>
 
@@ -144,8 +187,8 @@
     // =========================
     // CONFIG
     // =========================
-    const WORKER_BASE_URL = "https://terrelontane.gabbriellini.workers.dev"; // <-- CAMBIA QUI
-    const STORAGE_KEY = "tl_session_id_v1";
+    const WORKER_BASE_URL = "https://terrelontane.gabbriellini.workers.dev"; // <-- verifica dominio
+    const STORAGE_KEY = "tl_sid_v1";
 
     // =========================
     // SYSTEM PROMPT
@@ -196,12 +239,12 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     const inputEl = document.getElementById("input");
     const statusEl = document.getElementById("status");
     const btnSend = document.getElementById("btnSend");
-    const btnNewChat = document.getElementById("btnNewChat");
+    const btnNew = document.getElementById("btnNew");
 
     // =========================
     // STATE
     // =========================
-    let sessionId = localStorage.getItem(STORAGE_KEY) || null;
+    let sessionId = localStorage.getItem(STORAGE_KEY) || "";
     let isBusy = false;
 
     // =========================
@@ -210,16 +253,18 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     function setBusy(busy, text) {
       isBusy = busy;
       btnSend.disabled = busy;
-      btnNewChat.disabled = busy;
+      btnNew.disabled = busy;
       inputEl.disabled = busy;
       statusEl.textContent = text || "";
     }
 
-    function scrollToBottom() { chatEl.scrollTop = chatEl.scrollHeight; }
+    function scrollToBottom() {
+      // requestAnimationFrame riduce glitch su mobile
+      requestAnimationFrame(() => { chatEl.scrollTop = chatEl.scrollHeight; });
+    }
 
     function escapeHtml(str) {
-      const s = (str ?? "").toString();
-      return s.replace(/[&<>"']/g, (m) => ({
+      return String(str).replace(/[&<>"']/g, (m) => ({
         "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;"
       }[m]));
     }
@@ -227,9 +272,11 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     function addMessage(role, text) {
       const row = document.createElement("div");
       row.className = `msg-row ${role}`;
+
       const bubble = document.createElement("div");
       bubble.className = `bubble ${role}`;
       bubble.innerHTML = escapeHtml(text);
+
       row.appendChild(bubble);
       chatEl.appendChild(row);
       scrollToBottom();
@@ -239,9 +286,11 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       const row = document.createElement("div");
       row.className = "msg-row ai";
       row.id = "thinking-row";
+
       const bubble = document.createElement("div");
       bubble.className = "bubble ai";
       bubble.innerHTML = `<span class="spinner"></span>Sto pensando...`;
+
       row.appendChild(bubble);
       chatEl.appendChild(row);
       scrollToBottom();
@@ -253,46 +302,45 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     }
 
     // =========================
-    // API (coerente col tuo worker.js)
-    //  - POST /api/session/new
-    //  - POST /api/session/reset   body: {sessionId}
-    //  - POST /api/chat            body: {sessionId, message, systemPrompt}
+    // API (compatibile col tuo worker: sessionId nel payload)
     // =========================
-    async function api(path, body) {
+    async function postJson(path, bodyObj) {
       const res = await fetch(`${WORKER_BASE_URL}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body || {}),
+        body: JSON.stringify(bodyObj || {}),
       });
 
-      const raw = await res.text();
+      const txt = await res.text();
       let json = null;
-      try { json = JSON.parse(raw); } catch { /* raw può essere HTML */ }
+      try { json = JSON.parse(txt); } catch { /* ignore */ }
 
       if (!res.ok) {
-        const detail = (json && (json.detail || json.error)) ? (json.detail || json.error) : (raw || `HTTP ${res.status}`);
+        const detail = json?.error || json?.detail || txt || `HTTP ${res.status}`;
         throw new Error(detail);
       }
       return json ?? {};
     }
 
-    async function createNewSessionId() {
-      const out = await api("/api/session/new", {});
-      sessionId = out.sessionId;
+    async function newSession() {
+      const out = await postJson("/api/session/new", {});
+      sessionId = out.sessionId || "";
       localStorage.setItem(STORAGE_KEY, sessionId);
-      return sessionId;
+      chatEl.innerHTML = "";
+      addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
+    }
+
+    async function resetSessionIfAny() {
+      if (!sessionId) return;
+      await postJson("/api/session/reset", { sessionId });
+      chatEl.innerHTML = "";
+      addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
     }
 
     async function ensureSession() {
       if (sessionId) return sessionId;
-      return await createNewSessionId();
-    }
-
-    async function newChat() {
-      // UX: “Nuova chat” = nuovo sessionId + pulizia UI
-      await createNewSessionId();
-      chatEl.innerHTML = "";
-      addMessage("ai", "Nuova chat avviata. Dimmi pure.");
+      await newSession();
+      return sessionId;
     }
 
     async function sendMessage() {
@@ -306,8 +354,7 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
 
       try {
         const sid = await ensureSession();
-
-        const out = await api("/api/chat", {
+        const out = await postJson("/api/chat", {
           sessionId: sid,
           message: text,
           systemPrompt: SYSTEM_PROMPT,
@@ -329,29 +376,44 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     // =========================
     btnSend.addEventListener("click", sendMessage);
 
-    btnNewChat.addEventListener("click", async () => {
-      if (isBusy) return;
-      setBusy(true, "Creo nuova chat...");
-      try { await newChat(); }
-      catch (e) { addMessage("ai", `Errore: ${String(e.message || e)}`); }
-      finally { setBusy(false, ""); inputEl.focus(); }
-    });
-
     inputEl.addEventListener("keydown", (ev) => {
-      // Ctrl+Enter: newline (default)
-      if (ev.key === "Enter" && ev.ctrlKey) return;
-
-      // Enter: send (senza shift, senza ctrl)
+      if (ev.key === "Enter" && ev.ctrlKey) {
+        // Ctrl+Invio = newline (default)
+        return;
+      }
       if (ev.key === "Enter" && !ev.ctrlKey && !ev.shiftKey) {
         ev.preventDefault();
         sendMessage();
       }
     });
 
-    // Init UI
+    // Un solo bottone:
+    // - se c'è sessione: reset
+    // - se non c'è: new
+    btnNew.addEventListener("click", async () => {
+      if (isBusy) return;
+      setBusy(true, "Avvio chat...");
+      try {
+        if (sessionId) {
+          await resetSessionIfAny();
+        } else {
+          await newSession();
+        }
+      } catch (e) {
+        addMessage("ai", `Errore: ${String(e.message || e)}`);
+      } finally {
+        setBusy(false, "");
+        inputEl.focus();
+      }
+    });
+
+    // Boot
     (function boot() {
       addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
       inputEl.focus();
+      // opzionale: se vuoi partire sempre da sessione pulita sul device:
+      // sessionId = "";
+      // localStorage.removeItem(STORAGE_KEY);
     })();
   </script>
 <script>
