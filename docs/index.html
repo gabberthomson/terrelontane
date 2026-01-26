@@ -481,10 +481,14 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
       } catch (e) {
         removeThinking();
         addMessage("ai", `Errore: ${String(e.message || e)}`);
-      } finally {
-        setBusy(false, "");
-        inputEl.focus();
-      }
+		} finally {
+		  setBusy(false, "");
+
+		  // Desktop: rifocalizza per scrivere subito
+		  // Mobile: NON rifocalizzare, così la tastiera resta chiusa
+		  const isMobileLike = matchMedia("(pointer: coarse)").matches;
+		  if (!isMobileLike) inputEl.focus();
+		}
     }
 
     // =========================
