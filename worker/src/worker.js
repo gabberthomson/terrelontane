@@ -22,6 +22,25 @@ function json(body, { status = 200, cors } = {}) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+async function verifyTurnstile(token, ip, env) {
+  const secret = env.TURNSTILE_SECRET_KEY;
+  if (!secret) throw new Error("Missing TURNSTILE_SECRET_KEY");
+
+  const form = new FormData();
+  form.append("secret", secret);
+  form.append("response", token);
+  if (ip) form.append("remoteip", ip);
+
+  const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: form,
+  });
+
+  const out = await r.json().catch(() => ({}));
+  return out; // { success: boolean, ... }
+}
+
+
 export { SessionDO };
 
 export default {
@@ -67,7 +86,8 @@ export default {
 
     // Chat
     if (request.method === "POST" && url.pathname === "/api/chat") {
-      const payload = await request.json().catch(() => null);
+      const turnstileToken = (payload?.turnstileToken || "").toString();
+	  const payload = await request.json().catch(() => null);
       const sid = (payload?.sessionId || "").toString();
       const message = (payload?.message || "").toString();
       const systemPrompt = (payload?.systemPrompt || "").toString();
@@ -75,6 +95,28 @@ export default {
       if (!sid) return json({ error: "Missing sessionId" }, { status: 400, cors });
       if (!message.trim()) return json({ error: "Missing message" }, { status: 400, cors });
       if (!systemPrompt.trim()) return json({ error: "Missing systemPrompt" }, { status: 400, cors });
+
+	if (!turnstileToken) {
+	  return json({ error: "Missing turnstileToken" }, { status: 403, cors });
+	}
+
+	let ts;
+	try {
+	  const ip =
+		request.headers.get("CF-Connecting-IP") ||
+		request.headers.get("x-forwarded-for") ||
+		"";
+	  ts = await verifyTurnstile(turnstileToken, ip, env);
+	} catch (e) {
+	  return json({ error: `Turnstile verify error: ${String(e.message || e)}` }, { status: 500, cors });
+	}
+
+	if (!ts?.success) {
+	  // puoi includere ts["error-codes"] per debugging, ma meglio non esporlo troppo in prod
+	  return json({ error: "Turnstile failed" }, { status: 403, cors });
+	}
+
+
 
       const id = env.SESSION_DO.idFromString(sid);
       const stub = env.SESSION_DO.get(id);
