@@ -10,9 +10,8 @@
 
   <!-- Markdown renderer + HTML sanitizer (per output Gemini in markdown) -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js">
-</script>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
   <style>
     :root {
       --bg-overlay: rgba(0, 0, 0, 0.35);
@@ -266,8 +265,6 @@
           <textarea id="input" class="form-control" placeholder="Scrivi qui..."></textarea>
           <button id="btnSend" class="btn btn-success px-3">Invia</button>
         </div>
-  <!-- Turnstile invisible: non si vede, ma deve essere nel DOM -->
-<div id="ts"></div>	   
         <div class="d-flex justify-content-between mt-2">
           <div class="hint">Invio = invia • Ctrl+Invio = a capo</div>
           <div id="status" class="hint text-end"></div>
@@ -478,70 +475,6 @@ function addMessage(role, text) {
       return sessionId;
     }
 
-let tsWidgetId = null;
-
-let _tsResolve = null;
-let _tsReject = null;
-
-function onTurnstileOk(token) {
-  if (_tsResolve) {
-    _tsResolve(token);
-    _tsResolve = null;
-    _tsReject = null;
-  }
-}
-function onTurnstileError() {
-  if (_tsReject) _tsReject(new Error("Turnstile error"));
-  _tsResolve = null;
-  _tsReject = null;
-}
-function onTurnstileExpired() {
-  if (_tsReject) _tsReject(new Error("Turnstile expired"));
-  _tsResolve = null;
-  _tsReject = null;
-}
-
-window.addEventListener("load", () => {
-  tsWidgetId = turnstile.render("#ts", {
-    sitekey: "0x4AAAAAACVEy6qv4If7xC_z",
-    callback: onTurnstileOk,
-    "error-callback": onTurnstileError,
-    "expired-callback": onTurnstileExpired,
-
-    // "invisible" vero: non auto-eseguire e non mostrare fino a execute
-    execution: "execute",
-    appearance: "execute",
-  });
-});
-
-function getTurnstileToken() {
-  return new Promise((resolve, reject) => {
-    if (!window.turnstile || tsWidgetId === null) {
-      reject(new Error("Turnstile non pronto"));
-      return;
-    }
-    _tsResolve = resolve;
-    _tsReject = reject;
-
-    // IMPORTANT: token single-use → reset prima di execute
-    try {
-      turnstile.reset(tsWidgetId);
-      turnstile.execute(tsWidgetId);
-    } catch (e) {
-      _tsResolve = null; _tsReject = null;
-      reject(e);
-      return;
-    }
-
-    setTimeout(() => {
-      if (_tsReject) _tsReject(new Error("Turnstile timeout"));
-      _tsResolve = null; _tsReject = null;
-      try { turnstile.reset(tsWidgetId); } catch {}
-    }, 8000);
-  });
-}
-
-
 async function sendMessage() {
   const raw = inputEl.value || "";
   const text = raw.trim();
@@ -557,13 +490,13 @@ async function sendMessage() {
 
   try {
     const sid = await ensureSession();
-    const tsToken = await getTurnstileToken();
+ //   const tsToken = await getTurnstileToken();
 
     const out = await postJson("/api/chat", {
       sessionId: sid,
       message: text,
       systemPrompt: SYSTEM_PROMPT,
-      turnstileToken: tsToken,
+//      turnstileToken: tsToken,
     });
 
     removeThinking();
