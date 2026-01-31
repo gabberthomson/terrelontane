@@ -27,7 +27,7 @@ head_sampling_rate = 1
 
 [vars]
 ALLOWED_ORIGIN = "https://gabberthomson.github.io"
-GEMINI_FILE_SEARCH_STORE_NAME = "fileSearchStores/terrelontanestore-lijaw4hn6ulo"
+GEMINI_FILE_SEARCH_STORE_NAME = "fileSearchStores/terrelontanestore-r9ejiz9fzjtm"
 GEMINI_MODEL_CHAT = "models/gemini-2.5-flash"
 GEMINI_MODEL_SUMMARY = "models/gemini-2.5-flash"
 SUMMARY_TRIGGER_TURNS = "18"
