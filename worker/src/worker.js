@@ -65,6 +65,19 @@ export default {
       return json({ ok: true }, { cors });
     }
 
+    // History (per ripristinare la conversazione dopo riconnessione)
+    if (request.method === "GET" && url.pathname === "/api/session/history") {
+      const sid = url.searchParams.get("sessionId") || "";
+      if (!sid) return json({ error: "Missing sessionId" }, { status: 400, cors });
+
+      const id = env.SESSION_DO.idFromString(sid);
+      const stub = env.SESSION_DO.get(id);
+
+      const r = await stub.fetch("https://do/history", { method: "GET" });
+      const out = await r.json().catch(() => ({}));
+      return json(out, { status: r.status, cors });
+    }
+
     // Chat
     if (request.method === "POST" && url.pathname === "/api/chat") {
       const payload = await request.json().catch(() => null);

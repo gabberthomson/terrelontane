@@ -143,6 +143,15 @@ export class SessionDO {
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
     }
 
+    if (request.method === "GET" && url.pathname === "/history") {
+      const data = this._getJSON("data", { summary: "", turns: [], turnCount: 0 });
+      // Manda summary + turns al client per il replay
+      return new Response(
+        JSON.stringify({ summary: data.summary || "", turns: data.turns || [] }),
+        { headers: { "content-type": "application/json" } }
+      );
+    }
+
     if (request.method === "POST" && url.pathname === "/chat") {
       const payload = await request.json().catch(() => null);
       const userText = (payload?.message || "").toString().trim();

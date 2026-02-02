@@ -278,7 +278,8 @@
     // CONFIG
     // =========================
     const WORKER_BASE_URL = "https://terrelontane.gabbriellini.workers.dev"; // <-- verifica dominio
-    const STORAGE_KEY = "tl_sid_v1";
+    const STORAGE_KEY  = "tl_sid_v1";
+    const HISTORY_KEY  = "tl_history_v1";  // array di { role, text } nel localStorage
 
     // =========================
     // SYSTEM PROMPT
@@ -336,6 +337,24 @@ Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
     // =========================
     let sessionId = localStorage.getItem(STORAGE_KEY) || "";
     let isBusy = false;
+
+    // =========================
+    // LOCAL HISTORY (full log)
+    // =========================
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+      catch { return []; }
+    }
+
+    function appendHistory(role, text) {
+      const h = loadHistory();
+      h.push({ role, text });
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    }
+
+    function clearHistory() {
+      localStorage.removeItem(HISTORY_KEY);
+    }
 
     // =========================
     // Markdown renderer (safe)
@@ -458,6 +477,7 @@ function addMessage(role, text) {
       const out = await postJson("/api/session/new", {});
       sessionId = out.sessionId || "";
       localStorage.setItem(STORAGE_KEY, sessionId);
+      clearHistory();
       chatEl.innerHTML = "";
       addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
     }
@@ -465,6 +485,7 @@ function addMessage(role, text) {
     async function resetSessionIfAny() {
       if (!sessionId) return;
       await postJson("/api/session/reset", { sessionId });
+      clearHistory();
       chatEl.innerHTML = "";
       addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
     }
@@ -483,6 +504,7 @@ async function sendMessage() {
   setBusy(true, "");
 
   const userRow = addMessage("user", raw.trimEnd()); // <--- salva riferimento
+  appendHistory("user", text);
   inputEl.value = "";
   inputEl.blur?.(); // se vuoi chiudere la tastiera
 
@@ -500,7 +522,9 @@ async function sendMessage() {
     });
 
     removeThinking();
-    addMessage("ai", out.text || "(risposta vuota)");
+    const aiText = out.text || "(risposta vuota)";
+    addMessage("ai", aiText);
+    appendHistory("ai", aiText);
 
     // <--- QUI: porta la domanda in alto
     // leggero delay per far “stabilizzare” layout/markdown
@@ -552,8 +576,35 @@ async function sendMessage() {
     });
 
     // Boot
-    (function boot() {
-      addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
+    (async function boot() {
+      // Se c'è un sessionId, verifica che sia ancora valido sul server
+      if (sessionId) {
+        try {
+          const res = await fetch(
+            `${WORKER_BASE_URL}/api/session/history?sessionId=${encodeURIComponent(sessionId)}`
+          );
+          if (!res.ok) {
+            // Sessione scaduta o non valida → pulisci tutto
+            sessionId = "";
+            localStorage.removeItem(STORAGE_KEY);
+            clearHistory();
+          }
+        } catch {
+          // Errore di rete → mantieni sessionId e history, l'utente riproverà
+        }
+      }
+
+      const history = loadHistory();
+
+      if (history.length > 0) {
+        // Replay della storia completa dal localStorage
+        for (const { role, text } of history) {
+          if (!text) continue;
+          addMessage(role === "ai" ? "ai" : "user", text);
+        }
+      } else {
+        addMessage("ai", "Pronto. Fai una domanda su Terre Lontane.");
+      }
       inputEl.focus();
     })();
 
