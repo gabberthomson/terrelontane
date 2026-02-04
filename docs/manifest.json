@@ -1,0 +1,12 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "gabberthomson.github",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "gabberthomson.github",
+  "start_url": "/",
+  "theme_color": "#ffffff",
+  "description": "Assistente per il GdR Terre Lontane"
+}
