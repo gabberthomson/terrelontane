@@ -1,12 +1,18 @@
 {
-  "background_color": "#ffffff",
+  "id": "./",
+  "lang": "it",
+  "background_color": "#0b1220",
   "dir": "ltr",
   "display": "standalone",
   "name": "Terre Lontane",
   "orientation": "any",
-  "scope": "/",
+  "scope": "./",
   "short_name": "Terre Lontane",
-  "start_url": "/",
-  "theme_color": "#ffffff",
+  "start_url": "./",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "./icon_low.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ],
   "description": "Assistente per il GdR Terre Lontane"
 }

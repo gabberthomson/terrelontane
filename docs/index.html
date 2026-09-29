@@ -4,6 +4,12 @@
 <link rel="manifest" href="manifest.json" />
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Terre Lontane" />
+  <link rel="apple-touch-icon" href="./icon_low.png" />
+  <link rel="icon" type="image/png" href="./icon_low.png" />
+  <script src="./install.js" defer></script>
   <title>Terre Lontane - Assistente</title>
 
   <!-- Bootstrap (solo CSS) -->
@@ -251,10 +257,14 @@
         </a>
       </div>
 
-      <div class="d-flex align-items-center gap-2">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <button id="btnInstall" class="btn btn-sm btn-outline-primary" hidden>Installa app</button>
         <button id="btnNew" class="btn btn-sm btn-primary">Nuova chat</button>
       </div>
     </div>
+
+    <div id="installHint" class="hint text-white" hidden></div>
+    <div id="offlineHint" class="hint text-white" role="status" hidden>Sei offline. Puoi leggere la cronologia salvata; per inviare messaggi serve una connessione.</div>
 
     <!-- Chat -->
     <div class="chat-card">
@@ -281,28 +291,6 @@
     const WORKER_BASE_URL = "https://terrelontane.gabbriellini.workers.dev"; // <-- verifica dominio
     const STORAGE_KEY  = "tl_sid_v1";
     const HISTORY_KEY  = "tl_history_v1";  // array di { role, text } nel localStorage
-
-    // =========================
-    // SYSTEM PROMPT
-    // =========================
-    const SYSTEM_PROMPT = `Sei l’assistente ufficiale del gioco di ruolo “Terre Lontane”.
-Per OGNI domanda dell’utente devi seguire questo processo:
-Determina la modalità della domanda:
-REGOLA → chiarimenti su regole, meccaniche, abilità, oggetti, combattimento, magie, tiri, mostri già esistenti.
-IDEE → spunti creativi: avventure, ambientazioni, PNG, nuovi mostri, oggetti inventati.
-MISTA → una parte di regole + una parte creativa.
-Usa SEMPRE il tool file_search sul manuale di “Terre Lontane” prima di rispondere.
-MODALITÀ REGOLA:
-Rispondi SOLO usando informazioni presenti negli estratti recuperati con file_search.
-NON inventare regole, numeri, eccezioni o interpretazioni.
-Se non trovi la risposta negli estratti, dì:
-“Questa informazione non è presente nel manuale di Terre Lontane”.
-NON proporre house rule.
-MODALITÀ IDEE:
-Proponi idee pratiche e subito giocabili ma attieniti agli estratti recuperati con file_search per quanto riguarda le meccaniche di gioco, la geografia, magiue, armi e oggetti a disposizione degli avventuerieri. Se viene espressamente richiesto di inventare un mostro, un oggetto magico, una magia, un'ambientazione, fallo ma mantiene coerenza con lo stile e le meccaniche degli estratti recuperati con file_search.
-MODALITÀ MISTA:
-Dividi in “Regole” (solo manuale) e “Idee” (creative ma coerenti).
-Inizia SEMPRE indicando la modalità: “Modalità: REGOLA / IDEE / MISTA”.`;
 
     // =========================
     // DOM
@@ -481,6 +469,10 @@ async function sendMessage() {
   const raw = inputEl.value || "";
   const text = raw.trim();
   if (!text || isBusy) return;
+  if (!navigator.onLine) {
+    statusEl.textContent = "Connessione assente. Riprova quando sei online.";
+    return;
+  }
 
   setBusy(true, "");
 
@@ -498,7 +490,6 @@ async function sendMessage() {
     const out = await postJson("/api/chat", {
       sessionId: sid,
       message: text,
-      systemPrompt: SYSTEM_PROMPT,
 //      turnstileToken: tsToken,
     });
 

@@ -83,11 +83,9 @@ export default {
       const payload = await request.json().catch(() => null);
       const sid = (payload?.sessionId || "").toString();
       const message = (payload?.message || "").toString();
-      const systemPrompt = (payload?.systemPrompt || "").toString();
 
       if (!sid) return json({ error: "Missing sessionId" }, { status: 400, cors });
       if (!message.trim()) return json({ error: "Missing message" }, { status: 400, cors });
-      if (!systemPrompt.trim()) return json({ error: "Missing systemPrompt" }, { status: 400, cors });
 
       const id = env.SESSION_DO.idFromString(sid);
       const stub = env.SESSION_DO.get(id);
@@ -95,7 +93,7 @@ export default {
       const r = await stub.fetch("https://do/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message, systemPrompt }),
+        body: JSON.stringify({ message }),
       });
 
       const out = await r.json().catch(() => ({}));

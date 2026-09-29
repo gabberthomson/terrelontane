@@ -1,3 +1,5 @@
+import { SYSTEM_PROMPT, REVIEW_PROMPT, UNVERIFIED_RESPONSE } from "./prompts.js";
+
 export class SessionDO {
   constructor(state, env) {
     this.state = state;
@@ -92,9 +94,43 @@ export class SessionDO {
     }
 
     const json = await res.json();
-    const text =
-      json?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ?? "";
-    return text.trim();
+    const candidate = json?.candidates?.[0];
+    const text = candidate?.content?.parts
+      ?.filter((p) => !p.thought && typeof p.text === "string")
+      .map((p) => p.text).join("").trim() ?? "";
+    if (candidate?.finishReason !== "STOP" || !text) {
+      throw new Error("Gemini non ha completato la risposta. Riprova.");
+    }
+    const excerpts = (candidate?.groundingMetadata?.groundingChunks ?? [])
+      .map((chunk) => chunk.retrievedContext?.text)
+      .filter((value) => typeof value === "string" && value.trim());
+    return { text, excerpts: [...new Set(excerpts)] };
+  }
+
+  async _verifiedAnswer(contents) {
+    const draft = await this._callGeminiGenerate({
+      systemInstructionText: SYSTEM_PROMPT,
+      contents,
+      useFileSearch: true,
+    });
+    // Fail closed: the presence of a tool in the request is not proof of retrieval.
+    if (!draft.excerpts.length) return UNVERIFIED_RESPONSE;
+
+    try {
+      const review = await this._callGeminiGenerate({
+        systemInstructionText: REVIEW_PROMPT,
+        contents: [{ role: "user", parts: [{ text: JSON.stringify({
+          conversation: contents,
+          manualExcerpts: draft.excerpts,
+          proposedAnswer: draft.text,
+        }) }] }],
+        useFileSearch: false,
+      });
+      return review.text === "APPROVATA" ? draft.text : UNVERIFIED_RESPONSE;
+    } catch {
+      // Never expose an unverified draft if the review fails.
+      return UNVERIFIED_RESPONSE;
+    }
   }
 
   async _maybeRollSummary(data) {
@@ -122,7 +158,7 @@ export class SessionDO {
       modelOverride: summaryModel,
     });
 
-    data.summary = newSummary;
+    data.summary = newSummary.text;
     data.turns = remaining;
     data.turnCount = 0;
     return data;
@@ -155,10 +191,8 @@ export class SessionDO {
     if (request.method === "POST" && url.pathname === "/chat") {
       const payload = await request.json().catch(() => null);
       const userText = (payload?.message || "").toString().trim();
-      const systemPrompt = (payload?.systemPrompt || "").toString();
 
       if (!userText) return new Response(JSON.stringify({ error: "Missing message" }), { status: 400, headers: { "content-type": "application/json" } });
-      if (!systemPrompt.trim()) return new Response(JSON.stringify({ error: "Missing systemPrompt" }), { status: 400, headers: { "content-type": "application/json" } });
 
       const data = this._getJSON("data", { summary: "", turns: [], turnCount: 0 });
 
@@ -166,11 +200,7 @@ export class SessionDO {
       data.turnCount += 1;
 
       const contents = this._buildGeminiContents(data.summary, data.turns);
-      const assistantText = await this._callGeminiGenerate({
-        systemInstructionText: systemPrompt,
-        contents,
-        useFileSearch: true,
-      });
+      const assistantText = await this._verifiedAnswer(contents);
 
       data.turns.push({ role: "model", parts: [{ text: assistantText }] });
       data.turnCount += 1;
