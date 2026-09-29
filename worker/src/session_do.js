@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, REVIEW_PROMPT, UNVERIFIED_RESPONSE } from "./prompts.js";
+import { SYSTEM_PROMPT } from "./prompts.js";
 
 export class SessionDO {
   constructor(state, env) {
@@ -101,44 +101,20 @@ export class SessionDO {
     if (candidate?.finishReason !== "STOP" || !text) {
       throw new Error("Gemini non ha completato la risposta. Riprova.");
     }
-    const excerpts = (candidate?.groundingMetadata?.groundingChunks ?? [])
-      .map((chunk) => chunk.retrievedContext?.text)
-      .filter((value) => typeof value === "string" && value.trim());
-    return { text, excerpts: [...new Set(excerpts)] };
+    return { text };
   }
 
-  async _verifiedAnswer(contents) {
-    const draft = await this._callGeminiGenerate({
+  async _generateAnswer(contents) {
+    const answer = await this._callGeminiGenerate({
       systemInstructionText: SYSTEM_PROMPT,
       contents,
       useFileSearch: true,
     });
-    const mode = draft.text.match(/^Modalità:\s*(CONVERSAZIONE|IDEE|REGOLA|MISTA)\s*(?:\r?\n|$)/);
-    if (mode?.[1] === "CONVERSAZIONE") {
-      return draft.text.slice(mode[0].length).trim() || "Ciao! Come posso aiutarti con Terre Lontane?";
+    const greetingHeader = answer.text.match(/^Modalità:\s*CONVERSAZIONE\s*(?:\r?\n|$)/);
+    if (greetingHeader) {
+      return answer.text.slice(greetingHeader[0].length).trim() || "Ciao! Come posso aiutarti con Terre Lontane?";
     }
-    // Original stories do not need to exist in the manual. The generation prompt
-    // restricts unsupported mechanics; strict evidence review is for rules/mixed requests.
-    if (mode?.[1] === "IDEE") return draft.text;
-
-    // Rules and mixed answers still require evidence from the manual.
-    if (!draft.excerpts.length) return UNVERIFIED_RESPONSE;
-
-    try {
-      const review = await this._callGeminiGenerate({
-        systemInstructionText: REVIEW_PROMPT,
-        contents: [{ role: "user", parts: [{ text: JSON.stringify({
-          conversation: contents,
-          manualExcerpts: draft.excerpts,
-          proposedAnswer: draft.text,
-        }) }] }],
-        useFileSearch: false,
-      });
-      return review.text === "APPROVATA" ? draft.text : UNVERIFIED_RESPONSE;
-    } catch {
-      // Never expose an unverified draft if the review fails.
-      return UNVERIFIED_RESPONSE;
-    }
+    return answer.text;
   }
 
   async _maybeRollSummary(data) {
@@ -208,7 +184,7 @@ export class SessionDO {
       data.turnCount += 1;
 
       const contents = this._buildGeminiContents(data.summary, data.turns);
-      const assistantText = await this._verifiedAnswer(contents);
+      const assistantText = await this._generateAnswer(contents);
 
       data.turns.push({ role: "model", parts: [{ text: assistantText }] });
       data.turnCount += 1;
