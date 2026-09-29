@@ -113,7 +113,15 @@ export class SessionDO {
       contents,
       useFileSearch: true,
     });
-    // Fail closed: the presence of a tool in the request is not proof of retrieval.
+    const mode = draft.text.match(/^Modalità:\s*(CONVERSAZIONE|IDEE|REGOLA|MISTA)\s*(?:\r?\n|$)/);
+    if (mode?.[1] === "CONVERSAZIONE") {
+      return draft.text.slice(mode[0].length).trim() || "Ciao! Come posso aiutarti con Terre Lontane?";
+    }
+    // Original stories do not need to exist in the manual. The generation prompt
+    // restricts unsupported mechanics; strict evidence review is for rules/mixed requests.
+    if (mode?.[1] === "IDEE") return draft.text;
+
+    // Rules and mixed answers still require evidence from the manual.
     if (!draft.excerpts.length) return UNVERIFIED_RESPONSE;
 
     try {
